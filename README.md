@@ -97,6 +97,20 @@ Simply use dokcer compose to do all the job for you
 docker compose up
 ```
 
+## Authentication
+
+The HTTP API is protected using **API Key or JWT authentication**.
+
+You must include one of the following headers in every request.
+
+### API Key
+
+Authorization: ApiKey <your-api-key>
+
+Example:
+
+curl -H "Authorization: ApiKey your-api-key" \
+http://localhost:8080/messages
 
 ## Architecture Overview
 
