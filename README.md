@@ -6,9 +6,22 @@ This project is a re‑imagining of the original **[whatsapp-mcp](https://github
 
 Start `whatsapp-bridge` -> then run `whatsapp-mcp-server` in your preferred mode (STDIO or HTTP).
 
-| Connector | Chat |
-|------------|----------|
-| ![Connector](./screenshots/connector_claude.png) | ![Chat](./screenshots/chat_example.png) |
+<table>
+  <tr>
+    <td align="center">
+      <img src="./screenshots/connector_claude.png" width="320" />
+    </td>
+    <td align="center">
+      <img src="./screenshots/chat_example.png" width="320" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="./screenshots/n8n_demo.png" width="320" />
+    </td>
+    <td></td>
+  </tr>
+</table>
 
 ## Installation
 
