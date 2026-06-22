@@ -1,6 +1,6 @@
 # Design Spec: Group Participants & Description Feature
 
-**Status:** Draft (awaiting user review)
+**Status:** Approved (all 4 open questions resolved 2026-06-21)
 **Date:** 2026-06-21
 **Author:** Gunnar Thielebein (via opencode build agent)
 **Branch:** `feat/group-participants-and-description`
@@ -61,6 +61,10 @@ Der aktuelle `whatsapp-mcp-go`-Bridge hat zwei strukturelle Schwächen im Umgang
 | D7 | Background-Ticker-Intervall | 30min Ticker, 12h stale-Schwelle, max 5 Gruppen/Tick |
 | D8 | `get_chat` Participants-Default | `include_participants=false` |
 | D9 | Code-Organisation | Neues File `whatsapp-bridge/groups.go` in `package main` |
+| D10 | Alte Daten bei späteren Upgrades (Q1) | Unkorrigiert lassen, nur Fresh Reset beim Deployment |
+| D11 | Event-Handler-Panics (Q2) | Nur loggen, weiterlaufen (analog Webhook-Pattern) |
+| D12 | `get_chat` Participants LIMIT (Q3) | Ohne LIMIT, bei Bedarf nachrüsten (YAGNI) |
+| D13 | Leere `phone_number` bei Privacy (Q4) | **`null`** in JSON statt `""` → `*string` / `sql.NullString` |
 
 ---
 
@@ -243,7 +247,7 @@ type StoredGroup struct {
 type StoredParticipant struct {
     GroupJID     string
     JID          string
-    PhoneNumber  string
+    PhoneNumber  *string  // nil = null in JSON bei Privacy (D13)
     LID          string
     IsAdmin      bool
     IsSuperAdmin bool
@@ -661,6 +665,20 @@ type Chat struct {
 
 Die `Participants` werden im MCP-Server als `[]map[string]any` deklariert (statt stark typisiert als `StoredParticipant`), weil der MCP-Server die Bridge-Structs nicht importiert und die JSON-Deserialisation ohnehin lose bleibt. Tag-Namen stimmen mit der Bridge-Response überein.
 
+**Wichtig (D13):** In der JSON-Response der Bridge muss `phone_number` als `null` erscheinen, wenn `GroupParticipant.PhoneNumber` leer ist (Privacy). Erreicht wird das im Bridge-Code durch:
+- `StoredParticipant.PhoneNumber *string` (Pointer-Typ)
+- In `ListGroupParticipants` via `sql.NullString` scannen, dann Pointer-Konvertierung:
+  ```go
+  var phone sql.NullString
+  rows.Scan(..., &phone, ...)
+  var phonePtr *string
+  if phone.Valid && phone.String != "" {
+      s := phone.String
+      phonePtr = &s
+  }
+  // phonePtr = nil → JSON null (D13)
+  ```
+
 ---
 
 ## 8. Concurrency-Safety-Analyse
@@ -848,10 +866,12 @@ docker compose up -d
 
 ## 13. Open Questions (für User-Review)
 
-1. **Schema-Migration Pfad**: Akzeptiert du, dass bei einem späteren Upgrade (ohne Fresh Reset) die alten `messages`-Zeilen mit Gruppen-JID als Sender nicht automatisch korrigiert werden? (Sie bleiben als Gruppen-JID stehen, nur neue Messages haben korrekte Sender.)
-2. **Event-Handler-Panics**: Sollten diese den Bridge-Prozess killen (currently: nein, nur logged)? Vorschlag: bleiben geloggt, kein Process-Kill.
-3. **`IncludeParticipants` bei `get_chat`**: Performance-Test bei einer Gruppe mit 100+ Teilnehmern nicht gemacht. Falls es zu langsam ist, nachträglich `LIMIT` einführen?
-4. **Teilnehmer-Phone-Number-Auflösung**: `GroupParticipant.PhoneNumber` ist bei einigen Gruppen leer (Privacy). Akzeptiert du, dass dann `phone_number=""` in der Response steht?
+**Alle 4 Fragen wurden vom User am 2026-06-21 beantwortet** — Entscheidungen dokumentiert in Section 3 als D10–D13:
+
+1. ✅ **Schema-Migration Pfad (Q1 → D10):** Alte Daten bei späteren Upgrades unkorrigiert lassen. Nur Fresh Reset beim Deployment.
+2. ✅ **Event-Handler-Panics (Q2 → D11):** Nur loggen, weiterlaufen (analog Webhook-Pattern main.go:836-839).
+3. ✅ **`IncludeParticipants` LIMIT (Q3 → D12):** Erstmal ohne LIMIT, bei Bedarf nachrüsten (YAGNI).
+4. ✅ **Leere `phone_number` (Q4 → D13):** `null` in JSON statt `""`. Erreicht durch `*string` + `sql.NullString`-Konvertierung (siehe Sektion 7.4).
 
 ---
 
