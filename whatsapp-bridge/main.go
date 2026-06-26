@@ -827,58 +827,6 @@ func extractMediaInfo(msg *waE2E.Message) (mediaType string, filename string, ur
 
 // Handle regular incoming messages with media support
 func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *events.Message, logger waLog.Logger) {
-	go func() {
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			return
-		}
-		defer func() {
-			if r := recover(); r != nil {
-				log.Println("Recovered in webhook goroutine:", r)
-			}
-		}()
-		if cfg.WebhookUrl == "" {
-			return
-		}
-
-		content := extractTextContent(msg.Message)
-		mediaType, filename, _, _, _, _, _ := extractMediaInfo(msg.Message)
-
-		if content == "" && mediaType == "" {
-			return
-		}
-
-		payload := map[string]interface{}{
-			"chat_jid":   msg.Info.Chat.String(),
-			"sender":     msg.Info.Sender.User,
-			"content":    extractTextContent(msg.Message),
-			"is_from_me": msg.Info.IsFromMe,
-			"timestamp":  msg.Info.Timestamp.String(),
-			"push_name":  msg.Info.PushName,
-			"is_group":   strings.Contains(msg.Info.Chat.String(), "@g.us"),
-			"message_id": msg.Info.ID,
-			"media_type": mediaType,
-			"filename":   filename,
-		}
-
-		jsonData, err := json.Marshal(payload)
-		if err != nil {
-			log.Println("Webhook marshal error:", err)
-			return
-		}
-
-		resp, err := http.Post(
-			cfg.WebhookUrl,
-			"application/json",
-			bytes.NewBuffer(jsonData),
-		)
-
-		if err != nil {
-			log.Println("Webhook POST error:", err)
-			return
-		}
-		defer resp.Body.Close()
-	}()
 	chatJID := normalizeUserJID(client, msg.Info.Chat).String()
 	sender := normalizeUserJID(client, msg.Info.Sender).User
 
@@ -915,19 +863,52 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 
 	if err != nil {
 		logger.Warnf("Failed to store message: %v", err)
-	} else {
-		timestamp := msg.Info.Timestamp.Format("2006-01-02 15:04:05")
-		direction := "←"
-		if msg.Info.IsFromMe {
-			direction = "→"
+		return
+	}
+	timestamp := msg.Info.Timestamp.Format("2006-01-02 15:04:05")
+	direction := "←"
+	if msg.Info.IsFromMe {
+		direction = "→"
+	}
+
+	if mediaType != "" {
+		slog.Info("message", "ts", timestamp, "direction", direction, "sender", sender, "media_type", mediaType, "filename", filename, "content", content)
+	} else if content != "" {
+		slog.Info("message", "ts", timestamp, "direction", direction, "sender", sender, "content", content)
+	}
+	go func(msgID string, chat string) {
+		cfg, err := config.LoadConfig()
+		if err != nil || cfg.WebhookUrl == "" {
+			return
 		}
 
-		if mediaType != "" {
-			slog.Info("message", "ts", timestamp, "direction", direction, "sender", sender, "media_type", mediaType, "filename", filename, "content", content)
-		} else if content != "" {
-			slog.Info("message", "ts", timestamp, "direction", direction, "sender", sender, "content", content)
+		payload := map[string]interface{}{
+			"chat_jid":   chat,
+			"sender":     msg.Info.Sender.User,
+			"content":    extractTextContent(msg.Message),
+			"is_from_me": msg.Info.IsFromMe,
+			"timestamp":  msg.Info.Timestamp.String(),
+			"push_name":  msg.Info.PushName,
+			"is_group":   strings.Contains(chat, "@g.us"),
+			"message_id": msgID,
+			"media_type": mediaType,
+			"filename":   filename,
 		}
-	}
+
+		jsonData, _ := json.Marshal(payload)
+
+		resp, err := http.Post(cfg.WebhookUrl, "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			log.Println("Webhook POST error:", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		slog.Info("Webhook sent",
+			"message_id", msgID,
+			"chat_jid", chat,
+		)
+	}(msg.Info.ID, chatJID)
 }
 
 // DownloadMediaRequest represents the request body for the download media API
