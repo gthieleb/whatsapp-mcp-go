@@ -125,7 +125,8 @@ func openDatabase(dbName string) (*sql.DB, error) {
 
 	// Fallback to SQLite
 	log.Println("Connecting to sqlite3")
-	return sql.Open("sqlite3", "file:store/messages.db?_foreign_keys=on")
+	return sql.Open("sqlite3",
+		"file:store/messages.db?_foreign_keys=on&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 }
 
 // validateMediaPath sanitize media path
@@ -2691,7 +2692,7 @@ func main() {
 	}
 
 	dialect := "sqlite3"
-	connStr := "file:store/whatsapp.db?_foreign_keys=on"
+	connStr := "file:store/whatsapp.db?_foreign_keys=on&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 
 	if cfg.DB.IsPostgres {
 		dialect = "postgres"
