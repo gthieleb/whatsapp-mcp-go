@@ -193,7 +193,7 @@ func NewMessageStore() (*MessageStore, error) {
 			name TEXT,
 			last_message_time TIMESTAMP
 		);
-		
+
 		CREATE TABLE IF NOT EXISTS messages (
 			id TEXT,
 			chat_jid TEXT,
@@ -454,9 +454,9 @@ func migrateLIDChatsToPhoneJIDs(
 func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time) error {
 	if isPostgres {
 		_, err := store.db.Exec(
-			`INSERT INTO chats (jid, name, last_message_time) 
+			`INSERT INTO chats (jid, name, last_message_time)
          VALUES ($1, $2, $3)
-         ON CONFLICT (jid) DO UPDATE SET 
+         ON CONFLICT (jid) DO UPDATE SET
             name = EXCLUDED.name,
             last_message_time = EXCLUDED.last_message_time`,
 			jid, name, lastMessageTime,
@@ -479,18 +479,18 @@ func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, tim
 
 	if !isPostgres {
 		_, err := store.db.Exec(
-			`INSERT OR REPLACE INTO messages 
-		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length) 
+			`INSERT OR REPLACE INTO messages
+		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			id, chatJID, sender, content, timestamp, isFromMe, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength,
 		)
 		return err
 	}
 	_, err := store.db.Exec(
-		`INSERT INTO messages 
-    (id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length) 
+		`INSERT INTO messages
+    (id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-    ON CONFLICT(id, chat_jid) DO UPDATE SET 
+    ON CONFLICT(id, chat_jid) DO UPDATE SET
     chat_jid = EXCLUDED.chat_jid,
     sender = EXCLUDED.sender,
     content = EXCLUDED.content,
@@ -516,10 +516,10 @@ func (store *MessageStore) GetMessages(chatJID string, limit int) ([]Message, er
 
 	if isPostgres {
 		rows, err = store.db.Query(
-			`SELECT sender, content, timestamp, is_from_me, media_type, filename 
-					 FROM messages 
-					 WHERE chat_jid = $1 
-					 ORDER BY timestamp DESC 
+			`SELECT sender, content, timestamp, is_from_me, media_type, filename
+					 FROM messages
+					 WHERE chat_jid = $1
+					 ORDER BY timestamp DESC
 					 LIMIT $2`,
 			chatJID, limit,
 		)
@@ -930,12 +930,12 @@ type DownloadMediaResponse struct {
 func (store *MessageStore) StoreMediaInfo(id, chatJID, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
 	if isPostgres {
 		_, err := store.db.Exec(
-			`UPDATE messages 
-					 SET url = $1, 
-						 media_key = $2, 
-						 file_sha256 = $3, 
-						 file_enc_sha256 = $4, 
-						 file_length = $5 
+			`UPDATE messages
+					 SET url = $1,
+						 media_key = $2,
+						 file_sha256 = $3,
+						 file_enc_sha256 = $4,
+						 file_length = $5
 					 WHERE id = $6 AND chat_jid = $7`,
 			url, mediaKey, fileSHA256, fileEncSHA256, fileLength, id, chatJID,
 		)
@@ -958,8 +958,8 @@ func (store *MessageStore) GetMediaInfo(id, chatJID string) (string, string, str
 
 	if isPostgres {
 		err = store.db.QueryRow(
-			`SELECT media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length 
-					 FROM messages 
+			`SELECT media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length
+					 FROM messages
 					 WHERE id = $1 AND chat_jid = $2`,
 			id, chatJID,
 		).Scan(&mediaType, &filename, &url, &mediaKey, &fileSHA256, &fileEncSHA256, &fileLength)
@@ -1998,8 +1998,8 @@ func (store *MessageStore) ListMessages(s ListMessagesParams) (string, error) {
 	}
 
 	q := `
-        SELECT 
-            m.timestamp, m.sender, c.name, m.content, m.is_from_me, 
+        SELECT
+            m.timestamp, m.sender, c.name, m.content, m.is_from_me,
             c.jid, m.id, m.media_type
         FROM messages m
         JOIN chats c ON m.chat_jid = c.jid
@@ -2283,7 +2283,7 @@ func (store *MessageStore) ListChats(
 	}
 
 	q := `
-        SELECT 
+        SELECT
             c.jid, c.name, c.last_message_time,
             m.content AS last_message,
             m.sender AS last_sender,
@@ -2293,8 +2293,8 @@ func (store *MessageStore) ListChats(
 
 	if includeLastMessage {
 		q += `
-            LEFT JOIN messages m 
-            ON c.jid = m.chat_jid 
+            LEFT JOIN messages m
+            ON c.jid = m.chat_jid
             AND c.last_message_time = m.timestamp
         `
 	}
@@ -2443,7 +2443,7 @@ func (store *MessageStore) GetContactChats(jid string, limit, page int) ([]Chat,
             m.is_from_me AS last_is_from_me
         FROM chats c
         JOIN messages m ON c.jid = m.chat_jid
-        WHERE m.sender = ` + placeholder(1) + ` 
+        WHERE m.sender = ` + placeholder(1) + `
            OR c.jid = ` + placeholder(2) + `
         ORDER BY c.last_message_time DESC
         LIMIT ` + placeholder(3) + `
@@ -2506,7 +2506,7 @@ func (store *MessageStore) GetLastInteraction(jid string) (string, error) {
 	}
 
 	q := `
-        SELECT 
+        SELECT
             m.timestamp, m.sender, c.name, m.content, m.is_from_me,
             c.jid, m.id, m.media_type
         FROM messages m
@@ -2565,7 +2565,7 @@ func (store *MessageStore) GetChat(chatJID string, includeLastMessage bool) (*Ch
 	}
 
 	q := `
-        SELECT 
+        SELECT
             c.jid, c.name, c.last_message_time,
             m.content AS last_message,
             m.sender AS last_sender,
@@ -2575,8 +2575,8 @@ func (store *MessageStore) GetChat(chatJID string, includeLastMessage bool) (*Ch
 
 	if includeLastMessage {
 		q += `
-            LEFT JOIN messages m 
-            ON c.jid = m.chat_jid 
+            LEFT JOIN messages m
+            ON c.jid = m.chat_jid
             AND c.last_message_time = m.timestamp
         `
 	}
@@ -2631,14 +2631,14 @@ func (store *MessageStore) GetDirectChatByContact(phone string) (*Chat, error) {
 	}
 
 	q := `
-       SELECT 
+       SELECT
            c.jid, c.name, c.last_message_time,
            m.content AS last_message,
            m.sender AS last_sender,
            m.is_from_me AS last_is_from_me
        FROM chats c
-       LEFT JOIN messages m 
-           ON c.jid = m.chat_jid 
+       LEFT JOIN messages m
+           ON c.jid = m.chat_jid
           AND c.last_message_time = m.timestamp
        WHERE c.jid LIKE ` + placeholder(1) + `
          AND c.jid NOT LIKE '%@g.us'

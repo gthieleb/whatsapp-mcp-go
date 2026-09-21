@@ -317,4 +317,3 @@ Choose this version if you want:
 - a more maintainable and extensible project  
 
 The goal is not to replace the original project but to offer an alternative that fits different needs — especially for developers who prefer Go or want to deploy MCP‑based WhatsApp automation in production environments.
-
