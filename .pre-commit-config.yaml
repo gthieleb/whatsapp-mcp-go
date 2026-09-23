@@ -1,8 +1,17 @@
+# whatsapp-mcp-go — pre-commit hooks (Go service + CI workflow YAML)
+# Install: pre-commit install
+# Run all: pre-commit run -a
+#
+# Go checks run inside the SAME golang:1.25 container image as local dev
+# (never diverges); module/build caches are shared with the other event-lab
+# repos. Tests are the enforcement layer here — this repo has NO Go CI job
+# by design (lean CI: docker publish only), so keep hooks active.
 repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:
       - id: gitleaks
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -11,9 +20,51 @@ repos:
       - id: end-of-file-fixer
         exclude: \.(svg|patch)$
       - id: check-yaml
-        exclude: ^charts/.*\.yaml$
+        args: [--allow-multiple-documents]
       - id: check-json
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ['--maxkb=2048']
       - id: detect-private-key
+
+  - repo: local
+    hooks:
+      # ── YAML lint (CI workflows) ──────────────────────────────────
+      - id: yamllint
+        name: yamllint
+        entry: yamllint -c .yamllint
+        language: system
+        files: \.(yaml|yml)$
+
+      # ── Go gates — same golang:1.25 image as local dev. Two modules:
+      #    whatsapp-bridge/ and whatsapp-mcp-server/ (each own go.mod). ──
+      - id: gofumpt-container
+        name: gofumpt (golang:1.25 container, both modules)
+        entry: >
+          sh -c "for mod in whatsapp-bridge whatsapp-mcp-server; do
+          docker run --rm
+          -v \"$PWD:/app\"
+          -v /tmp/opencode/gomodcache:/go/pkg/mod
+          -w /app/$mod
+          golang:1.25
+          sh -c 'go install mvdan.cc/gofumpt@v0.11.0 >/dev/null 2>&1 &&
+          gofumpt -l . | (! grep .)' || exit 1; done"
+        language: system
+        pass_filenames: false
+        files: \.go$
+
+      - id: go-test-container
+        name: go test -race (golang:1.25 container, both modules)
+        entry: >
+          sh -c "for mod in whatsapp-bridge whatsapp-mcp-server; do
+          echo \"--- $mod\";
+          docker run --rm
+          -v \"$PWD:/app\"
+          -v /tmp/opencode/gomodcache:/go/pkg/mod
+          -v /tmp/opencode/gocache-wa:/root/.cache/go-build
+          -w /app/$mod
+          golang:1.25
+          sh -c 'go test -race -shuffle=on ./...' || exit 1; done"
+        language: system
+        pass_filenames: false
+        files: \.go$

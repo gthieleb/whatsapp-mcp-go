@@ -1,0 +1,15 @@
+# Relaxed yamllint for CI workflow YAML (same rules as n8n-event-lab):
+# multi-doc manifests, long comment lines, and comment indentation are common
+# and intentional here.
+rules:
+  line-length: disable
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  indentation:
+    spaces: consistent
+    indent-sequences: consistent
+  document-start: disable
+  truthy: disable
+  braces: {max-spaces-inside: 1}
+  octal-values: {forbid-implicit-octal: true, forbid-explicit-octal: true}

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
 	"whatsapp-bridge/config"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -91,7 +92,6 @@ func JwtAuthMiddleware(cfg *config.Config, next http.Handler) http.Handler {
 			jwt.WithAudience("whatsapp-mcp-server"),
 			jwt.WithValidMethods([]string{"HS256"}),
 		)
-
 		if err != nil {
 			slog.Warn("jwt parse error", "err", err, "remote", r.RemoteAddr)
 			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)

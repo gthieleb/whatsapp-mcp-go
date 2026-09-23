@@ -585,8 +585,8 @@ func getLastInteractionHandler(
 
 func sendFileHandler(ctx context.Context,
 	req *mcp.CallToolRequest,
-	in sendFileInput) (*mcp.CallToolResult, map[string]any, error) {
-
+	in sendFileInput,
+) (*mcp.CallToolResult, map[string]any, error) {
 	if in.MediaPath == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -611,8 +611,8 @@ func sendFileHandler(ctx context.Context,
 
 func sendAudioMessageHandler(ctx context.Context,
 	req *mcp.CallToolRequest,
-	in sendAudioMessageInput) (*mcp.CallToolResult, map[string]any, error) {
-
+	in sendAudioMessageInput,
+) (*mcp.CallToolResult, map[string]any, error) {
 	success, msg := SendAudioVoiceMessage(in.Recipient, in.MediaPath)
 
 	resultData := map[string]any{"success": success, "message": msg}
