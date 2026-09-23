@@ -36,7 +36,7 @@ func ConvertToOpusOgg(inputFile string, outputFile string, bitrate string, sampl
 	// Ensure output directory exists
 	outputDir := filepath.Dir(outputFile)
 	if outputDir != "." {
-		if err := os.MkdirAll(outputDir, 0755); err != nil {
+		if err := os.MkdirAll(outputDir, 0o755); err != nil {
 			return "", fmt.Errorf("failed to create output directory: %w", err)
 		}
 	}

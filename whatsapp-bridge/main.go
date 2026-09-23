@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/binary"
@@ -22,6 +23,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
 	"whatsapp-bridge/auth"
 	"whatsapp-bridge/config"
 	bridgelogger "whatsapp-bridge/logger"
@@ -32,10 +34,6 @@ import (
 
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/mdp/qrterminal"
-	qrcode "github.com/skip2/go-qrcode"
-
-	"bytes"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -169,7 +167,7 @@ func validateMediaPath(mediaPath string) (string, error) {
 
 // NewMessageStore Initialize message store
 func NewMessageStore() (*MessageStore, error) {
-	if err := os.MkdirAll("store", 0755); err != nil {
+	if err := os.MkdirAll("store", 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create store directory: %v", err)
 	}
 
@@ -472,7 +470,8 @@ func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time
 
 // StoreMessage Store a message in the database
 func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
-	mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
+	mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64,
+) error {
 	if content == "" && mediaType == "" {
 		return nil
 	}
@@ -785,7 +784,6 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 	}
 
 	_, err = client.SendMessage(context.Background(), recipientJID, msg)
-
 	if err != nil {
 		return false, fmt.Sprintf("Error sending message: %v", err)
 	}
@@ -861,7 +859,6 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 		fileEncSHA256,
 		fileLength,
 	)
-
 	if err != nil {
 		logger.Warnf("Failed to store message: %v", err)
 		return
@@ -1030,7 +1027,6 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	localPath := ""
 
 	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, err = messageStore.GetMediaInfo(messageID, chatJID)
-
 	if err != nil {
 		if isPostgres {
 			err = messageStore.db.QueryRow(
@@ -1053,7 +1049,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 		return false, "", "", "", fmt.Errorf("not a media message")
 	}
 
-	if err := os.MkdirAll(chatDir, 0755); err != nil {
+	if err := os.MkdirAll(chatDir, 0o755); err != nil {
 		return false, "", "", "", fmt.Errorf("failed to create chat directory: %v", err)
 	}
 
@@ -1105,7 +1101,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 		return false, "", "", "", fmt.Errorf("failed to download media: %v", err)
 	}
 
-	if err := os.WriteFile(localPath, mediaData, 0644); err != nil {
+	if err := os.WriteFile(localPath, mediaData, 0o644); err != nil {
 		return false, "", "", "", fmt.Errorf("failed to save media file: %v", err)
 	}
 
@@ -2281,7 +2277,6 @@ func (store *MessageStore) ListChats(
 	includeLastMessage bool,
 	sortBy string,
 ) ([]Chat, error) {
-
 	placeholder := func(n int) string {
 		if isPostgres {
 			return fmt.Sprintf("$%d", n)
@@ -2685,7 +2680,7 @@ func main() {
 
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
-	if err := os.MkdirAll("store", 0755); err != nil {
+	if err := os.MkdirAll("store", 0o755); err != nil {
 		logger.Errorf("Failed to create store directory: %v", err)
 		return
 	}
@@ -2841,45 +2836,19 @@ func main() {
 
 	// Pair / connect to WhatsApp in a goroutine so main can block on signals.
 	go func() {
-		if client.Store.ID == nil {
-			qrChan, _ := client.GetQRChannel(context.Background())
+		if client.Store.ID != nil {
 			if err := client.Connect(); err != nil {
 				logger.Errorf("Failed to connect: %v", err)
 				return
 			}
-			for evt := range qrChan {
-				switch evt.Event {
-				case "code":
-					fmt.Println("\nScan this QR code with your WhatsApp app:")
-					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-					if png, err := qrcode.Encode(evt.Code, qrcode.Medium, 256); err == nil {
-						state.SetPairingQRPNG(png)
-					} else {
-						slog.Warn("failed to encode pairing qr as png", "err", err)
-					}
-				case "success":
-					fmt.Println("\nSuccessfully connected and authenticated!")
-					return
-				case "timeout":
-					// Pairing QR timed out: whatsmeow closes the QR
-					// channel and GetQRChannel cannot be re-armed on the
-					// same client instance. Mark the session stale, drop
-					// the dead PNG (status reports qr_stale=true) and exit
-					// so the scheduler restarts us with a fresh QR session.
-					// Exit-on-timeout is the eventlab W5.12a contract
-					// (supervisor re-init documented as W6+ alternative).
-					state.SetQRStale(true)
-					state.ClearPairingQR()
-					logger.Errorf("Pairing QR timeout — restarting bridge for fresh QR (qr_stale=1)")
-					os.Exit(1)
-				}
-			}
-		} else {
-			if err := client.Connect(); err != nil {
-				logger.Errorf("Failed to connect: %v", err)
-				return
-			}
+			return
 		}
+		// Unpaired: supervise the pairing lifecycle for the whole process
+		// lifetime (eventlab W5.12a refinement) — on QR timeout the
+		// supervisor re-arms a fresh session on the same client instead
+		// of dying. The QR windows stay continuously alive; no process
+		// exit, no CrashLoopBackOff.
+		runPairingSupervisor(context.Background(), client, state, 5*time.Second, logger)
 	}()
 
 	exitChan := make(chan os.Signal, 1)

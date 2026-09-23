@@ -181,7 +181,6 @@ func SendAudioVoiceMessage(recipient, mediaPath string) (bool, string) {
 		defer func(name string) {
 			err := os.Remove(name)
 			if err != nil {
-
 			}
 		}(finalPath)
 	}
