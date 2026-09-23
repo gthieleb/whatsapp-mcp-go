@@ -10,6 +10,7 @@ type State struct {
 	connected    bool
 	loggedIn     bool
 	pairingQRPNG []byte
+	qrStale      bool
 	waVersion    string
 }
 
@@ -44,7 +45,8 @@ func (s *State) PairingQRPNG() []byte {
 }
 
 // PairingRequired returns true when the client is not logged in AND
-// a pairing QR is currently available.
+// a pairing QR is currently available. A stale (timed-out) session without
+// a QR is dead, not pending — callers must regenerate first.
 func (s *State) PairingRequired() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -73,6 +75,22 @@ func (s *State) ClearPairingQR() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pairingQRPNG = nil
+}
+
+// QRStale reports whether the cached pairing QR is known-dead (previous
+// pairing attempt timed out). A stale session never serves a QR: the
+// /auth/pairing-qr handler maps this to 410 Gone so callers regenerate
+// (bridge restart delivers a fresh QR session).
+func (s *State) QRStale() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.qrStale
+}
+
+func (s *State) SetQRStale(v bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.qrStale = v
 }
 
 func (s *State) WAVersion() string {

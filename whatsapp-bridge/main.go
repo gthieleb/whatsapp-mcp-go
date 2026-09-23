@@ -1480,6 +1480,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, cfg *
 			"connected":        state.Connected(),
 			"logged_in":        state.LoggedIn(),
 			"pairing_required": state.PairingRequired(),
+			"qr_stale":         state.QRStale(),
 			"wa_version":       state.WAVersion(),
 		})
 	})
@@ -1491,6 +1492,12 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, cfg *
 		}
 		png := state.PairingQRPNG()
 		if png == nil {
+			if state.QRStale() {
+				// Dead session (previous QR timed out): no QR is served,
+				// the bridge exits right after so a restart regenerates.
+				http.Error(w, "pairing QR stale; bridge is regenerating (restart with fresh session imminent)", http.StatusGone)
+				return
+			}
 			http.Error(w, "no pairing QR available; client is logged in or has not started pairing yet", http.StatusGone)
 			return
 		}
@@ -2854,8 +2861,17 @@ func main() {
 					fmt.Println("\nSuccessfully connected and authenticated!")
 					return
 				case "timeout":
-					logger.Errorf("Pairing QR timeout")
-					return
+					// Pairing QR timed out: whatsmeow closes the QR
+					// channel and GetQRChannel cannot be re-armed on the
+					// same client instance. Mark the session stale, drop
+					// the dead PNG (status reports qr_stale=true) and exit
+					// so the scheduler restarts us with a fresh QR session.
+					// Exit-on-timeout is the eventlab W5.12a contract
+					// (supervisor re-init documented as W6+ alternative).
+					state.SetQRStale(true)
+					state.ClearPairingQR()
+					logger.Errorf("Pairing QR timeout — restarting bridge for fresh QR (qr_stale=1)")
+					os.Exit(1)
 				}
 			}
 		} else {
