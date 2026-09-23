@@ -18,7 +18,9 @@ RUN go mod download
 COPY . .
 
 # Build
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o ${BINARY_NAME} main.go
+# Build (package build — compiles every .go file in the module root,
+# multi-file main packages otherwise break here)
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o ${BINARY_NAME} .
 
 # Provide a statically linked tar binary (busybox:musl) for media download handling.
 # busybox:stable is NOT used because it ships a dynamically linked binary
