@@ -1467,6 +1467,12 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, cfg *
 		})
 	})
 
+	// GET /api/contacts — eventlab W5.18 directory (dm|group kinds).
+	// Registered BEFORE "/contacts/" so the exact-path pattern wins.
+	apiMux.HandleFunc("/contacts", func(w http.ResponseWriter, r *http.Request) {
+		handleContactsEndpoint(messageStore, w, r)
+	})
+
 	apiMux.HandleFunc("/auth/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -2284,21 +2290,25 @@ func (store *MessageStore) ListChats(
 		return "?"
 	}
 
-	q := `
+	var q string
+	if includeLastMessage {
+		q = `
         SELECT
             c.jid, c.name, c.last_message_time,
             m.content AS last_message,
             m.sender AS last_sender,
             m.is_from_me AS last_is_from_me
         FROM chats c
-    `
-
-	if includeLastMessage {
-		q += `
             LEFT JOIN messages m
             ON c.jid = m.chat_jid
             AND c.last_message_time = m.timestamp
-        `
+    `
+	} else {
+		q = `
+        SELECT
+            c.jid, c.name, c.last_message_time
+        FROM chats c
+    `
 	}
 
 	var args []any
@@ -2323,11 +2333,19 @@ func (store *MessageStore) ListChats(
 	}
 	q += " ORDER BY " + order
 
-	q += " LIMIT " + placeholder(len(args)+1) + "::int"
+	q += " LIMIT " + placeholder(len(args)+1)
+	if isPostgres {
+		q += "::int"
+	}
 	args = append(args, limit)
 
-	q += " OFFSET " + placeholder(len(args)+1) + "::int"
-	args = append(args, page*limit)
+	q += " OFFSET " + placeholder(len(args)+1)
+	if isPostgres {
+		args = append(args, page*limit)
+		q += "::int"
+	} else {
+		args = append(args, page*limit)
+	}
 
 	rows, err := store.db.Query(q, args...)
 	if err != nil {
@@ -2345,8 +2363,14 @@ func (store *MessageStore) ListChats(
 			lastSender  sql.NullString
 			lastFromMe  sql.NullBool
 		)
+		// scan args follow the selected column count (includeLastMessage
+		// adds the three message-join columns; base list is chats-only)
+		scanArgs := []any{&jid, &name, &lastMsgTime}
+		if includeLastMessage {
+			scanArgs = append(scanArgs, &lastMsg, &lastSender, &lastFromMe)
+		}
 
-		if err := rows.Scan(&jid, &name, &lastMsgTime, &lastMsg, &lastSender, &lastFromMe); err != nil {
+		if err := rows.Scan(scanArgs...); err != nil {
 			log.Printf("list_chats scan error: %v", err)
 			continue
 		}
@@ -2568,19 +2592,22 @@ func (store *MessageStore) GetChat(chatJID string, includeLastMessage bool) (*Ch
 
 	q := `
         SELECT
+            c.jid, c.name, c.last_message_time
+        FROM chats c
+    `
+
+	if includeLastMessage {
+		q = `
+        SELECT
             c.jid, c.name, c.last_message_time,
             m.content AS last_message,
             m.sender AS last_sender,
             m.is_from_me AS last_is_from_me
         FROM chats c
-    `
-
-	if includeLastMessage {
-		q += `
             LEFT JOIN messages m
             ON c.jid = m.chat_jid
             AND c.last_message_time = m.timestamp
-        `
+    `
 	}
 
 	q += " WHERE c.jid = " + placeholder(1)
@@ -2860,4 +2887,44 @@ func main() {
 
 	fmt.Println("Disconnecting...")
 	client.Disconnect()
+}
+
+// handleContactsEndpoint serves GET /api/contacts — the eventlab W5.18
+// directory contract: `{items: [{id, label, kind, parent_id?, meta}]}`
+// aggregated from the local chat store. Kinds: dm (direct chats),
+// group (@g.us) — forum topics are a WhatsApp-nonexistence (meta carries
+// last_activity for freshness sorting). Optional ?kind=dm|group filter.
+func handleContactsEndpoint(ms *MessageStore, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	chats, err := ms.ListChats(nil, 500, 0, false, "recent")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	kindFilter := r.URL.Query().Get("kind")
+	items := []map[string]interface{}{}
+	for _, c := range chats {
+		kind := "dm"
+		if c.IsGroup() {
+			kind = "group"
+		}
+		if kindFilter != "" && kindFilter != kind {
+			continue
+		}
+		item := map[string]interface{}{
+			"id":    c.JID,
+			"label": c.Name,
+			"kind":  kind,
+			"meta": map[string]interface{}{
+				"last_activity": c.LastMessageTime,
+			},
+		}
+		items = append(items, item)
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{"items": items})
 }
